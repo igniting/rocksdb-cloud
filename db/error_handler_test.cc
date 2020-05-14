@@ -242,7 +242,7 @@ TEST_F(DBErrorHandlingTest, DoubleManifestWriteError) {
   });
   SyncPoint::GetInstance()->EnableProcessing();
   s = Flush();
-  ASSERT_EQ(s.severity(), rocksdb::Status::Severity::kHardError);
+  ASSERT_EQ(s.severity(), ROCKSDB_NAMESPACE::Status::Severity::kHardError);
   fault_env->SetFilesystemActive(true);
 
   // This Resume() will attempt to create a new manifest file and fail again

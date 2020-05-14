@@ -51,7 +51,6 @@
 #include "util/stderr_logger.h"
 #include "util/string_util.h"
 
-#ifdef USE_AWS
 namespace rocksdb {
 #ifdef USE_AWS
 class CloudRequestCallbackGuard {
