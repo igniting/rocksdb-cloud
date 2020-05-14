@@ -1,12 +1,12 @@
 //  Copyright (c) 2016-present, Rockset, Inc.  All rights reserved.
 //
 #pragma once
-#include "rocksdb/env.h"
-#include "rocksdb/status.h"
-
 #include <functional>
 #include <memory>
 #include <unordered_map>
+
+#include "rocksdb/env.h"
+#include "rocksdb/status.h"
 
 namespace Aws {
 namespace Auth {
@@ -43,7 +43,7 @@ enum LogType : unsigned char {
 
 // Type of AWS access credentials
 enum class AwsAccessType {
-  kUndefined, // Use AWS SDK's default credential chain
+  kUndefined,  // Use AWS SDK's default credential chain
   kSimple,
   kInstance,
   kTaskRole,
@@ -107,23 +107,24 @@ using CloudRequestCallback =
     std::function<void(CloudRequestOpType, uint64_t, uint64_t, bool)>;
 
 class BucketOptions {
-private:
-  std::string bucket_; // The suffix for the bucket name
-  std::string prefix_; // The prefix for the bucket name.  Defaults to "rockset."
-  std::string object_; // The object path for the bucket
-  std::string region_; // The region for the bucket
-  std::string name_;   // The name of the bucket (prefix_ + bucket_)
-public:
+ private:
+  std::string bucket_;  // The suffix for the bucket name
+  std::string
+      prefix_;  // The prefix for the bucket name.  Defaults to "rockset."
+  std::string object_;  // The object path for the bucket
+  std::string region_;  // The region for the bucket
+  std::string name_;    // The name of the bucket (prefix_ + bucket_)
+ public:
   BucketOptions();
   // Sets the name of the bucket to be the new bucket name.
   // If prefix is specified, the new bucket name will be [prefix][bucket]
   // If no prefix is specified, the bucket name will use the existing prefix
   void SetBucketName(const std::string& bucket, const std::string& prefix = "");
-  const std::string & GetBucketName() const { return name_; }
-  const std::string & GetObjectPath() const { return object_; }
+  const std::string& GetBucketName() const { return name_; }
+  const std::string& GetObjectPath() const { return object_; }
   void SetObjectPath(const std::string& object) { object_ = object; }
-  const std::string & GetRegion() const { return region_; }
-  void SetRegion(const std::string& region)  { region_ = region; }
+  const std::string& GetRegion() const { return region_; }
+  void SetRegion(const std::string& region) { region_ = region; }
 
   // Initializes the bucket properties for test purposes
   void TEST_Initialize(const std::string& name_prefix,
@@ -152,10 +153,10 @@ inline bool operator!=(const BucketOptions& lhs, const BucketOptions& rhs) {
 }
 
 class AwsCloudOptions {
-public:
-  static Status GetClientConfiguration(CloudEnv *env,
-                                       const std::string& region,
-                                       Aws::Client::ClientConfiguration* config);
+ public:
+  static Status GetClientConfiguration(
+      CloudEnv* env, const std::string& region,
+      Aws::Client::ClientConfiguration* config);
 };
 
 //
@@ -163,7 +164,7 @@ public:
 // Environent used for the cloud.
 //
 class CloudEnvOptions {
-private:
+ private:
  public:
   BucketOptions src_bucket;
   BucketOptions dest_bucket;
@@ -270,9 +271,8 @@ private:
   // Default: false
   bool use_aws_transfer_manager;
 
-  // The number of object's metadata that are fetched in every iteration when listing
-  // the results of a directory
-  // Default: 5000
+  // The number of object's metadata that are fetched in every iteration when
+  // listing the results of a directory Default: 5000
   int number_objects_listed_in_one_iteration;
 
   // During opening, we get the size of all SST files currently in the
@@ -287,6 +287,19 @@ private:
   // Default: -1, means don't use this option.
   int64_t constant_sst_file_size_in_sst_file_manager;
 
+  // Skip listing files in the cloud in GetChildren. That means GetChildren
+  // will only return files in local directory. During DB opening, RocksDB
+  // makes multiple GetChildren calls, which are very expensive if we list
+  // objects in the cloud.
+  //
+  // This option is used in remote compaction where we open the DB in a
+  // temporary folder, and then the folder is deleted after the RPC is done.
+  // This requires opening DB to be really fast, and it's unnecessary to cleanup
+  // various things, which is what RocksDB calls GetChildren for.
+  //
+  // Default: false.
+  bool skip_cloud_files_in_getchildren;
+
   CloudEnvOptions(
       CloudType _cloud_type = CloudType::kCloudAws,
       LogType _log_type = LogType::kLogKafka,
@@ -300,7 +313,8 @@ private:
       bool _skip_dbid_verification = false,
       bool _use_aws_transfer_manager = false,
       int _number_objects_listed_in_one_iteration = 5000,
-      bool _constant_sst_file_size_in_sst_file_manager = -1)
+      bool _constant_sst_file_size_in_sst_file_manager = -1,
+      bool _skip_cloud_files_in_getchildren = false)
       : cloud_type(_cloud_type),
         log_type(_log_type),
         keep_local_sst_files(_keep_local_sst_files),
@@ -319,14 +333,16 @@ private:
         number_objects_listed_in_one_iteration(
             _number_objects_listed_in_one_iteration),
         constant_sst_file_size_in_sst_file_manager(
-            _constant_sst_file_size_in_sst_file_manager) {}
+            _constant_sst_file_size_in_sst_file_manager),
+        skip_cloud_files_in_getchildren(_skip_cloud_files_in_getchildren) {}
 
   // print out all options to the log
   void Dump(Logger* log) const;
 
   // Sets result based on the value of name or alt in the environment
   // Returns true if the name/alt exists in the environment, false otherwise
-  static bool GetNameFromEnvironment(const char *name, const char *alt, std::string * result);
+  static bool GetNameFromEnvironment(const char* name, const char* alt,
+                                     std::string* result);
   void TEST_Initialize(const std::string& name_prefix,
                        const std::string& object_path,
                        const std::string& region = "");
@@ -346,16 +362,16 @@ typedef std::map<std::string, std::string> DbidList;
 class CloudEnv : public Env {
  protected:
   CloudEnvOptions cloud_env_options;
-  Env* base_env_; // The underlying env
+  Env* base_env_;  // The underlying env
 
-  CloudEnv(const CloudEnvOptions& options, Env *base, const std::shared_ptr<Logger>& logger);
-public:
+  CloudEnv(const CloudEnvOptions& options, Env* base,
+           const std::shared_ptr<Logger>& logger);
+
+ public:
   std::shared_ptr<Logger> info_log_;  // informational messages
   virtual ~CloudEnv();
   // Returns the underlying env
-  Env* GetBaseEnv() {
-    return base_env_;
-  }
+  Env* GetBaseEnv() { return base_env_; }
   virtual const char* Name() const { return "cloud"; }
 
   virtual Status PreloadCloudManifest(const std::string& local_dbname) = 0;

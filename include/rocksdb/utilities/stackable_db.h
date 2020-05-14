@@ -451,12 +451,6 @@ class StackableDB : public DB {
     return db_->DefaultColumnFamily();
   }
 
-#ifndef ROCKSDB_LITE
-  Status TryCatchUpWithPrimary() override {
-    return db_->TryCatchUpWithPrimary();
-  }
-#endif  // ROCKSDB_LITE
-
   virtual Status ExecuteRemoteCompactionRequest(
       const PluggableCompactionParam& inputParams,
       PluggableCompactionResult* result,
@@ -472,6 +466,12 @@ class StackableDB : public DB {
   virtual void UnRegisterPluggableCompactionService() override {
     db_->UnRegisterPluggableCompactionService();
   }
+
+#ifndef ROCKSDB_LITE
+  Status TryCatchUpWithPrimary() override {
+    return db_->TryCatchUpWithPrimary();
+  }
+#endif  // ROCKSDB_LITE
 
  protected:
   DB* db_;

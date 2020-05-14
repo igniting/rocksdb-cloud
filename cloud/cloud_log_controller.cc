@@ -19,9 +19,10 @@
 #include "util/string_util.h"
 
 namespace rocksdb {
-CloudLogWritableFile::CloudLogWritableFile(
-    CloudEnv* env, const std::string& fname, const EnvOptions& /*options*/)
-  : env_(env), fname_(fname) {}
+CloudLogWritableFile::CloudLogWritableFile(CloudEnv* env,
+                                           const std::string& fname,
+                                           const EnvOptions& /*options*/)
+    : env_(env), fname_(fname) {}
 
 CloudLogWritableFile::~CloudLogWritableFile() {}
 
@@ -30,29 +31,12 @@ const std::chrono::microseconds CloudLogControllerImpl::kRetryPeriod =
 
 CloudLogController::~CloudLogController() {}
 
-CloudLogControllerImpl::CloudLogControllerImpl(CloudEnv* env)
-    : env_(env), running_(false) {
-  // Create a random number for the cache directory.
-  const std::string uid = trim(env_->GetBaseEnv()->GenerateUniqueId());
-
-  // Temporary directory for cache.
-  const std::string bucket_dir = kCacheDir + pathsep + env_->GetSrcBucketName();
-  cache_dir_ = bucket_dir + pathsep + uid;
-
-  // Create temporary directories.
-  status_ = env_->GetBaseEnv()->CreateDirIfMissing(kCacheDir);
-  if (status_.ok()) {
-    status_ = env_->GetBaseEnv()->CreateDirIfMissing(bucket_dir);
-  }
-  if (status_.ok()) {
-    status_ = env_->GetBaseEnv()->CreateDirIfMissing(cache_dir_);
-  }
-}
+CloudLogControllerImpl::CloudLogControllerImpl() : running_(false) {}
 
 CloudLogControllerImpl::~CloudLogControllerImpl() {
   if (running_) {
-    // This is probably not a good situation as the derived class is partially destroyed
-    // but the tailer might still be active.
+    // This is probably not a good situation as the derived class is partially
+    // destroyed but the tailer might still be active.
     Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
         "[%s] CloudLogController closing.  Stopping stream.", Name());
     StopTailingStream();
@@ -61,9 +45,41 @@ CloudLogControllerImpl::~CloudLogControllerImpl() {
       "[%s] CloudLogController closed.", Name());
 }
 
+Status CloudLogControllerImpl::Initialize(CloudEnv* env) {
+  env_ = env;
+  // Create a random number for the cache directory.
+  const std::string uid = trim(env_->GetBaseEnv()->GenerateUniqueId());
+
+  // Temporary directory for cache.
+  const std::string bucket_dir = kCacheDir + pathsep + env_->GetSrcBucketName();
+  cache_dir_ = bucket_dir + pathsep + uid;
+
+  // Create temporary directories.
+  Status st = env_->GetBaseEnv()->CreateDirIfMissing(kCacheDir);
+  if (st.ok()) {
+    st = env_->GetBaseEnv()->CreateDirIfMissing(bucket_dir);
+  }
+  if (st.ok()) {
+    st = env_->GetBaseEnv()->CreateDirIfMissing(cache_dir_);
+  }
+  return st;
+}
+
+Status CloudLogControllerImpl::Prepare(CloudEnv* env) {
+  if (env != nullptr) {
+    status_ = Initialize(env);
+  } else {
+    status_ = Status::NotSupported("LogController requires a CloudEnv");
+  }
+  if (status_.ok()) {
+    status_ = StartTailingStream(env->GetSrcBucketName());
+  }
+  return status_;
+}
+
 std::string CloudLogControllerImpl::GetCachePath(
     const Slice& original_pathname) const {
-  const std::string & cache_dir = GetCacheDir();
+  const std::string& cache_dir = GetCacheDir();
   return cache_dir + pathsep + basename(original_pathname.ToString());
 }
 
@@ -131,27 +147,26 @@ Status CloudLogControllerImpl::Apply(const Slice& in) {
     // If this file is not yet open, open it and store it in cache.
     if (iter == cache_fds_.end()) {
       std::unique_ptr<RandomRWFile> result;
-      st = env_->GetBaseEnv()->NewRandomRWFile(
-          pathname, &result, EnvOptions());
+      st = env_->GetBaseEnv()->NewRandomRWFile(pathname, &result, EnvOptions());
 
       if (!st.ok()) {
-          // create the file
-          std::unique_ptr<WritableFile> tmp_writable_file;
-          env_->GetBaseEnv()->NewWritableFile(pathname, &tmp_writable_file,
-                                               EnvOptions());
-          tmp_writable_file.reset();
-          // Try again.
-          st = env_->GetBaseEnv()->NewRandomRWFile(
-                  pathname, &result, EnvOptions());
+        // create the file
+        std::unique_ptr<WritableFile> tmp_writable_file;
+        env_->GetBaseEnv()->NewWritableFile(pathname, &tmp_writable_file,
+                                            EnvOptions());
+        tmp_writable_file.reset();
+        // Try again.
+        st = env_->GetBaseEnv()->NewRandomRWFile(pathname, &result,
+                                                 EnvOptions());
       }
 
       if (st.ok()) {
         cache_fds_[pathname] = std::move(result);
         Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
-            "[%s] Tailer: Successfully opened file %s and cached",
-            Name(), pathname.c_str());
+            "[%s] Tailer: Successfully opened file %s and cached", Name(),
+            pathname.c_str());
       } else {
-          return st;
+        return st;
       }
     }
 
@@ -168,7 +183,8 @@ Status CloudLogControllerImpl::Apply(const Slice& in) {
     if (iter != cache_fds_.end()) {
       Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
           "[%s] Tailer: Delete file %s, but it is still open."
-          " Closing it now..", Name(), pathname.c_str());
+          " Closing it now..",
+          Name(), pathname.c_str());
       RandomRWFile* fd = iter->second.get();
       fd->Close();
       cache_fds_.erase(iter);
@@ -176,8 +192,8 @@ Status CloudLogControllerImpl::Apply(const Slice& in) {
 
     st = env_->GetBaseEnv()->DeleteFile(pathname);
     Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
-        "[%s] Tailer: Deleted file: %s %s",
-        Name(), pathname.c_str(), st.ToString().c_str());
+        "[%s] Tailer: Deleted file: %s %s", Name(), pathname.c_str(),
+        st.ToString().c_str());
 
     if (st.IsNotFound()) {
       st = Status::OK();
@@ -190,14 +206,13 @@ Status CloudLogControllerImpl::Apply(const Slice& in) {
       cache_fds_.erase(iter);
     }
     Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
-        "[%s] Tailer: Closed file %s %s",
-        Name(), pathname.c_str(), st.ToString().c_str());
+        "[%s] Tailer: Closed file %s %s", Name(), pathname.c_str(),
+        st.ToString().c_str());
   } else {
     st = Status::IOError("Unknown operation");
     Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
-        "[%s] Tailer: Unknown operation '%x': File %s %s",
-        Name(), operation, pathname.c_str(),
-        st.ToString().c_str());
+        "[%s] Tailer: Unknown operation '%x': File %s %s", Name(), operation,
+        pathname.c_str(), st.ToString().c_str());
   }
 
   return st;
@@ -270,7 +285,7 @@ void CloudLogControllerImpl::StopTailingStream() {
 Status CloudLogControllerImpl::Retry(RetryType func) {
   Status stat;
   std::chrono::microseconds start(env_->NowMicros());
-  
+
   while (true) {
     // If command is successful, return immediately
     stat = func();
@@ -378,4 +393,5 @@ Status CloudLogControllerImpl::GetFileSize(const std::string& fname,
   }
   return st;
 }
+
 }  // namespace rocksdb

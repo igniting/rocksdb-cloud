@@ -85,9 +85,10 @@ DBTestBase::DBTestBase(const std::string path)
   // Randomize the test path so that multiple tests can run in parallel
   srand(static_cast<unsigned int>(time(nullptr)));
   std::string mypath = path + "_" + std::to_string(rand());
+  
   env_->NewLogger(test::TmpDir(env_) + "/rocksdb-cloud.log", &info_log_);
   info_log_->SetInfoLogLevel(InfoLogLevel::DEBUG_LEVEL);
-  s3_env_ = CreateNewAwsEnv(mypath);
+  s3_env_ = CreateNewAwsEnv(mypath, env_);
 #endif
   env_->SetBackgroundThreads(1, Env::LOW);
   env_->SetBackgroundThreads(1, Env::HIGH);
@@ -642,7 +643,7 @@ Options DBTestBase::GetOptions(
 }
 
 #ifdef USE_AWS
-Env* DBTestBase::CreateNewAwsEnv(const std::string& prefix) {
+  Env* DBTestBase::CreateNewAwsEnv(const std::string& prefix, Env *parent) {
   if (!prefix.empty()) {
     fprintf(stderr, "Creating new AWS env with prefix %s\n", prefix.c_str());
   }
@@ -652,7 +653,7 @@ Env* DBTestBase::CreateNewAwsEnv(const std::string& prefix) {
   CloudEnv* cenv = nullptr;
   std::string region;
   coptions.TEST_Initialize("dbtest.", prefix, region);
-  Status st = AwsEnv::NewAwsEnv(Env::Default(), coptions, info_log_, &cenv);
+  Status st = AwsEnv::NewAwsEnv(parent, coptions, info_log_, &cenv);
   ((CloudEnvImpl*)cenv)->TEST_DisableCloudManifest();
   ((AwsEnv*)cenv)->TEST_SetFileDeletionDelay(std::chrono::seconds(0));
   ROCKS_LOG_INFO(info_log_, "Created new aws env with path %s", prefix.c_str());
