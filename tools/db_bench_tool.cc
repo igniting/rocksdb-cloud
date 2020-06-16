@@ -1280,7 +1280,11 @@ ROCKSDB_NAMESPACE::Env* CreateAwsEnv(
   assert(coptions.credentials.HasValid().ok());
 
   coptions.keep_local_sst_files = FLAGS_keep_local_sst_files;
-  coptions.TEST_Initialize("dbbench.", "", region);
+  if (FLAGS_db.empty()) {
+    coptions.TEST_Initialize("dbbench.", "db-bench", region);
+  } else {
+    coptions.TEST_Initialize("dbbench.", FLAGS_db, region);
+  }
   ROCKSDB_NAMESPACE::CloudEnv* s;
   ROCKSDB_NAMESPACE::Status st = ROCKSDB_NAMESPACE::AwsEnv::NewAwsEnv(
       ROCKSDB_NAMESPACE::Env::Default(), coptions, std::move(info_log), &s);
